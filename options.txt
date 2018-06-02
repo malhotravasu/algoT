@@ -1,0 +1,13 @@
+Python Libraries:
+	pyAlgoTrade
+	*Zipline
+	
+Databases:
+	Cassandra
+	*FireStore
+	SQL (testing purpose)
+	
+Data Sources:
+	*Alphavantage
+
+* : Current Choice
