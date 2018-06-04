@@ -21,6 +21,8 @@ def get_put_data(db):
     r = requests.get(url = URL)
     data_dump = r.json()['Time Series (1min)']
     document_name = next(iter(data_dump))
+    if ('16:00:00' in document_name):
+      break
     document_data = data_dump[document_name]
     put_data(db, document_name, document_data)
     print('Sleeping')
