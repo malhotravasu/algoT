@@ -1,3 +1,4 @@
 permissions.json
 cron/permissions.json
 __pycache__
+.ipynb_checkpoints
