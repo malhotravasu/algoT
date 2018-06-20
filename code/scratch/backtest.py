@@ -2,6 +2,7 @@
 
 import pandas as pd
 from pandas import to_datetime
+import signals
 
 class Backtest(object):
     """Main Backtesting Object"""
