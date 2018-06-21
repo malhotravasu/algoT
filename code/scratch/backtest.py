@@ -19,7 +19,7 @@ class Backtest(object):
         else:
             self.start = ohlcv.index.min()
             self.end = ohlcv.index.max()
-        self.ohlcv = ohlcv.loc[start:end]
+        self.ohlcv = ohlcv.loc[self.start:self.end].copy()
         self.ini_cash = ini_cash
         self.ini_shares = ini_shares
         self.curr_cash = ini_cash
