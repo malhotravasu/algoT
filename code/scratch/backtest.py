@@ -7,30 +7,55 @@ import signals
 class Backtest(object):
     """Main Backtesting Object"""
 
-    def __init__(self, ohlcv, start, end, ini_cash, ini_shares=0, freq=None):
-        self.start = to_datetime(start)
-        self.end = to_datetime(end)
+    def __init__(self, ohlcv, ini_cash, start=None, end=None, ini_shares=0, algo=None, params=None):
+        if start and end:
+            self.start = to_datetime(start)
+            self.end = to_datetime(end)
+        else:
+            self.start = ohlcv.index.min()
+            self.end = ohlcv.index.max()
         self.ohlcv = ohlcv.loc[start:end]
         self.ini_cash = ini_cash
         self.ini_shares = ini_shares
         self.curr_cash = ini_cash
         self.curr_shares = ini_shares
+        if algo:
+            if params:
+                self.buy, self.sell = signals.evaluate(self.ohlcv, algo, params)
+            else:
+                self.buy, self.sell = signals.evaluate(self.ohlcv, algo)
 
-    # def _evaluate_signals(self, algo):
-    #     pass
-    #     self.signals = signals
-    #     return signals
-
-    def run_backtest(self, signals):
-        # Run backtest
-        # self._summarize(trades)
-        # return self.summary()
-        pass
+    def run_backtest(self, number, buy=None, sell=None):
+        """ Run backtest here """
+        ohlcv = self.ohlcv
+        ohlcv['buy'] = buy if buy else self.buy
+        ohlcv['sell'] = sell if sell else self.sell
+        trades = []
+        for index, row in ohlcv[(ohlcv['buy'] == True) | (ohlcv['sell'] == True)].iterrows():
+            trade = {}
+            trade['timestamp'] = index
+            trade['share_price'] = row['close']
+            if(row['buy']):
+                self.curr_shares += number
+                self.curr_cash -= number * (row['close'])
+                trade['owned_shares'] = self.curr_shares
+                trade['remaining_cash'] = self.curr_cash
+                trade['type'] = 'buy'
+            elif(row['sell']):
+                self.curr_shares -= number
+                self.curr_cash += number * (row['close'])
+                trade['owned_shares'] = self.curr_shares
+                trade['remaining_cash'] = self.curr_cash
+                trade['type'] = 'sell'
+            trades.append(trade)
+        trades_df = pd.DataFrame(trades).set_index('timestamp') # Convert to pandas DataFrame
+        return self._summarize(trades_df)
+        
         
     def _summarize(self, trades):
         """
         Summarizes the backtest
-            report: (Dict with these Params)
+            summary: (Dict with these Params)
                 duration_analyzed
                 number_of_trades
                 simple_return
@@ -52,6 +77,7 @@ class Backtest(object):
         return summary
 
     def summary(self):
+        """ Access summary """
         if self._summary:
             return self._summary
         raise KeyError('Run the Algorithm first!')
