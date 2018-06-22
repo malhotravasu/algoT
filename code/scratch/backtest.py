@@ -37,27 +37,31 @@ class Backtest(object):
         ohlcv['buy'] = buy if buy else self.buy
         ohlcv['sell'] = sell if sell else self.sell
         trades = []
+        timedelta = pd.Timedelta(1, unit='d')
         for index, row in ohlcv[(ohlcv['buy'] == True) | (ohlcv['sell'] == True)].iterrows():
-            trade = {}
-            trade['timestamp'] = index
-            trade['share_price'] = row['close']
-            if(row['buy']):
-                self.curr_shares += number
-                self.curr_cash -= number * (row['close'])
-                trade['owned_shares'] = self.curr_shares
-                trade['remaining_cash'] = self.curr_cash
-                trade['type'] = 'buy'
-            elif(row['sell']):
-                self.curr_shares -= number
-                self.curr_cash += number * (row['close'])
-                trade['owned_shares'] = self.curr_shares
-                trade['remaining_cash'] = self.curr_cash
-                trade['type'] = 'sell'
-            trades.append(trade)
+            if index == self.end:
+                continue
+            else:
+                trade = {}
+                trade['timestamp'] = index
+                trade['share_price'] = row['close']
+                if(row['buy']):
+                    self.curr_shares += number
+                    self.curr_cash -= number * (ohlcv.loc[self.handle_index(ohlcv, index, timedelta)]['open'])
+                    trade['owned_shares'] = self.curr_shares
+                    trade['remaining_cash'] = self.curr_cash
+                    trade['type'] = 'buy'
+                elif(row['sell']):
+                    self.curr_shares -= number
+                    self.curr_cash += number * (ohlcv.loc[self.handle_index(ohlcv, index, timedelta)]['open'])
+                    trade['owned_shares'] = self.curr_shares
+                    trade['remaining_cash'] = self.curr_cash
+                    trade['type'] = 'sell'
+                trades.append(trade)
         trades_df = pd.DataFrame(trades).set_index('timestamp') # Convert to pandas DataFrame
         return self._summarize(trades_df)
-        
-        
+
+
     def _summarize(self, trades):
         """
         Summarizes the backtest
@@ -91,3 +95,18 @@ class Backtest(object):
     def reset(self):
         self.curr_cash = self.ini_cash
         self.curr_shares = self.ini_shares
+
+    def handle_index(self, df, index, timedelta):
+        if index.dayofweek != 4:
+            index = index + timedelta
+            index = self.check(df, index, timedelta)
+        else:
+            index = index + 3*timedelta
+            index = self.check(df, index, timedelta)
+        return index
+
+    def check(self, df, index, timedelta):
+        if index in df.index:
+            return index
+        else:
+            return self.check(df, index + timedelta, timedelta)
