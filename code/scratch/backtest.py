@@ -2,7 +2,8 @@
 
 import pandas as pd
 from pandas import to_datetime
-import signals
+from . import signals
+
 
 class Backtest(object):
     """Main Backtesting Object"""
@@ -14,8 +15,8 @@ class Backtest(object):
             algo: Preferred algo (moving_average, rsi, etc)
         """
         if start and end:
-            self.start = to_datetime(start)
-            self.end = to_datetime(end)
+            self.start = self.get_closest_stamp(ohlcv.index, to_datetime(start), pd.Timedelta(1, unit='d'), 'start')
+            self.end = self.get_closest_stamp(ohlcv.index, to_datetime(end), pd.Timedelta(1, unit='d'), 'end')
         else:
             self.start = ohlcv.index.min()
             self.end = ohlcv.index.max()
@@ -29,6 +30,18 @@ class Backtest(object):
                 self.buy, self.sell = signals.evaluate(self.ohlcv, algo, params)
             else:
                 self.buy, self.sell = signals.evaluate(self.ohlcv, algo)
+
+    def get_closest_stamp(self, index, timestamp, delta, type):
+        if type == 'start':
+            closest = timestamp
+            while closest not in index:
+                closest += delta
+            return closest
+        elif type == 'end':
+            closest = timestamp
+            while closest not in index:
+                closest -= delta
+            return closest
 
     def run_backtest(self, number, buy=None, sell=None):
         """ Run backtest here """
@@ -60,7 +73,6 @@ class Backtest(object):
                 trades.append(trade)
         trades_df = pd.DataFrame(trades).set_index('timestamp') # Convert to pandas DataFrame
         return self._summarize(trades_df)
-
 
     def _summarize(self, trades):
         """
@@ -97,16 +109,11 @@ class Backtest(object):
         self.curr_shares = self.ini_shares
 
     def handle_index(self, df, index, timedelta):
-        if index.dayofweek != 4:
+        index+timedelta
+        while index not in df.index:
             index = index + timedelta
-            index = self.check(df, index, timedelta)
-        else:
-            index = index + 3*timedelta
-            index = self.check(df, index, timedelta)
         return index
 
-    def check(self, df, index, timedelta):
-        if index in df.index:
-            return index
-        else:
-            return self.check(df, index + timedelta, timedelta)
+
+
+
