@@ -2,7 +2,7 @@
 
 import pandas as pd
 from pandas import to_datetime
-from . import signals
+from signals import evaluate
 
 
 class Backtest(object):
@@ -15,33 +15,21 @@ class Backtest(object):
             algo: Preferred algo (moving_average, rsi, etc)
         """
         if start and end:
-            self.start = self.get_closest_stamp(ohlcv.index, to_datetime(start), pd.Timedelta(1, unit='d'), 'start')
-            self.end = self.get_closest_stamp(ohlcv.index, to_datetime(end), pd.Timedelta(1, unit='d'), 'end')
+            self.start = self.get_closest_stamp(ohlcv.index, to_datetime(start), pd.Timedelta(days=1), 'start')
+            self.end = self.get_closest_stamp(ohlcv.index, to_datetime(end), pd.Timedelta(days=1), 'end')
         else:
             self.start = ohlcv.index.min()
             self.end = ohlcv.index.max()
         self.ohlcv = ohlcv.loc[self.start:self.end].copy()
         self.ini_cash = ini_cash
         self.ini_shares = ini_shares
-        self.curr_cash = ini_cash
-        self.curr_shares = ini_shares
+        self.curr_cash = ini_cash # Initialsiation of mutable variables
+        self.curr_shares = ini_shares # Initialsiation of mutable variables
         if algo:
             if params:
-                self.buy, self.sell = signals.evaluate(self.ohlcv, algo, params)
+                self.buy, self.sell = evaluate(self.ohlcv, algo, params)
             else:
-                self.buy, self.sell = signals.evaluate(self.ohlcv, algo)
-
-    def get_closest_stamp(self, index, timestamp, delta, type):
-        if type == 'start':
-            closest = timestamp
-            while closest not in index:
-                closest += delta
-            return closest
-        elif type == 'end':
-            closest = timestamp
-            while closest not in index:
-                closest -= delta
-            return closest
+                self.buy, self.sell = evaluate(self.ohlcv, algo)
 
     def run_backtest(self, number, buy=None, sell=None):
         """ Run backtest here """
@@ -104,11 +92,24 @@ class Backtest(object):
             return self._summary
         raise KeyError('Run the Algorithm first!')
 
+    def get_closest_stamp(self, index, timestamp, delta, type='start'):
+        if type == 'start':
+            closest = timestamp
+            while closest not in index:
+                closest += delta
+            return closest
+        elif type == 'end':
+            closest = timestamp
+            while closest not in index:
+                closest -= delta
+            return closest
+
     def reset(self):
         self.curr_cash = self.ini_cash
         self.curr_shares = self.ini_shares
 
     def handle_index(self, df, index, timedelta):
+        """ Possible Duplicate"""
         index+timedelta
         while index not in df.index:
             index = index + timedelta
