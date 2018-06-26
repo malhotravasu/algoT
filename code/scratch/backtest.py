@@ -14,17 +14,32 @@ class Backtest(object):
         params:
             algo: Preferred algo (moving_average, rsi, etc)
         """
-        if start and end:
-            self.start = self.get_closest_stamp(ohlcv.index, to_datetime(start), pd.Timedelta(days=1), 'start')
-            self.end = self.get_closest_stamp(ohlcv.index, to_datetime(end), pd.Timedelta(days=1), 'end')
+        start = to_datetime(start)
+        end = to_datetime(end)
+        if start:
+            self.start = self.get_closest_stamp(ohlcv.index, start, pd.Timedelta(days=1), 'start')
         else:
             self.start = ohlcv.index.min()
+        if end:
+            self.end = self.get_closest_stamp(ohlcv.index, end, pd.Timedelta(days=1), 'end')
+        else:
             self.end = ohlcv.index.max()
-        self.ohlcv = ohlcv.loc[self.start:self.end].copy()
+
+        # Initialising Data
+        if isinstance(ohlcv, pd.DataFrame):
+            self.ohlcv = ohlcv.loc[self.start:self.end].copy()
+        elif isinstance(ohlcv, str) and ohlcv=='default':
+            pass # Set self.ohlcv to Default Data Bundle (To be decided later)
+
+        # Immutable Trading variable
         self.ini_cash = ini_cash
         self.ini_shares = ini_shares
-        self.curr_cash = ini_cash # Initialsiation of mutable variables
-        self.curr_shares = ini_shares # Initialsiation of mutable variables
+
+        # Mutable Trading variable
+        self.curr_cash = ini_cash
+        self.curr_shares = ini_shares
+        
+        # Algo goes here
         if algo:
             if params:
                 self.buy, self.sell = evaluate(self.ohlcv, algo, params)
@@ -38,7 +53,7 @@ class Backtest(object):
         ohlcv['buy'] = buy if buy else self.buy
         ohlcv['sell'] = sell if sell else self.sell
         trades = []
-        timedelta = pd.Timedelta(1, unit='d')
+        delta = pd.Timedelta(days=1) #  To be replace with a state variable 
         for index, row in ohlcv[(ohlcv['buy'] == True) | (ohlcv['sell'] == True)].iterrows():
             if index == self.end:
                 continue
@@ -48,13 +63,13 @@ class Backtest(object):
                 trade['share_price'] = row['close']
                 if(row['buy']):
                     self.curr_shares += number
-                    self.curr_cash -= number * (ohlcv.loc[self.handle_index(ohlcv, index, timedelta)]['open'])
+                    self.curr_cash -= number * (ohlcv.loc[self.get_closest_stamp(self.ohlcv.index, index, delta)]['open'])
                     trade['owned_shares'] = self.curr_shares
                     trade['remaining_cash'] = self.curr_cash
                     trade['type'] = 'buy'
                 elif(row['sell']):
                     self.curr_shares -= number
-                    self.curr_cash += number * (ohlcv.loc[self.handle_index(ohlcv, index, timedelta)]['open'])
+                    self.curr_cash += number * (ohlcv.loc[self.get_closest_stamp(self.ohlcv.index, index, delta)]['open'])
                     trade['owned_shares'] = self.curr_shares
                     trade['remaining_cash'] = self.curr_cash
                     trade['type'] = 'sell'
@@ -107,14 +122,3 @@ class Backtest(object):
     def reset(self):
         self.curr_cash = self.ini_cash
         self.curr_shares = self.ini_shares
-
-    def handle_index(self, df, index, timedelta):
-        """ Possible Duplicate"""
-        index+timedelta
-        while index not in df.index:
-            index = index + timedelta
-        return index
-
-
-
-
