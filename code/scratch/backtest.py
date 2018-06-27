@@ -3,6 +3,7 @@
 import pandas as pd
 from pandas import to_datetime
 from signals import evaluate
+from utility import get_closest_stamp
 
 
 class Backtest(object):
@@ -14,14 +15,17 @@ class Backtest(object):
         params:
             algo: Preferred algo (moving_average, rsi, etc)
         """
+
+        self.freq = pd.Timedelta(days=1) # Default Time Delta
+
         start = to_datetime(start)
         end = to_datetime(end)
         if start:
-            self.start = self.get_closest_stamp(ohlcv.index, start, pd.Timedelta(days=1), 'start')
+            self.start = get_closest_stamp(ohlcv.index, start, self.freq, 'start')
         else:
             self.start = ohlcv.index.min()
         if end:
-            self.end = self.get_closest_stamp(ohlcv.index, end, pd.Timedelta(days=1), 'end')
+            self.end = get_closest_stamp(ohlcv.index, end, self.freq, 'end')
         else:
             self.end = ohlcv.index.max()
 
@@ -38,42 +42,50 @@ class Backtest(object):
         # Mutable Trading variable
         self.curr_cash = ini_cash
         self.curr_shares = ini_shares
-        
+
         # Algo goes here
         if algo:
             if params:
                 self.buy, self.sell = evaluate(self.ohlcv, algo, params)
             else:
                 self.buy, self.sell = evaluate(self.ohlcv, algo)
+            self.algo_ready = True
 
-    def run_backtest(self, number, buy=None, sell=None):
+    def run_backtest(self, buy_type, buy_param, sell_type, sell_param):
         """ Run backtest here """
         self.reset()
         ohlcv = self.ohlcv
-        ohlcv['buy'] = buy if buy else self.buy
-        ohlcv['sell'] = sell if sell else self.sell
+
+        if self.algo_ready == True:
+            ohlcv['buy'] = self.buy
+            ohlcv['sell'] = self.sell
+        else:
+            raise KeyError('Establish your algo first: Either at Object creation time or using establish_algo()')
+        
         trades = []
-        delta = pd.Timedelta(days=1) #  To be replace with a state variable 
-        for index, row in ohlcv[(ohlcv['buy'] == True) | (ohlcv['sell'] == True)].iterrows():
-            if index == self.end:
-                continue
-            else:
-                trade = {}
-                trade['timestamp'] = index
-                trade['share_price'] = row['close']
-                if(row['buy']):
-                    self.curr_shares += number
-                    self.curr_cash -= number * (ohlcv.loc[self.get_closest_stamp(self.ohlcv.index, index, delta)]['open'])
-                    trade['owned_shares'] = self.curr_shares
-                    trade['remaining_cash'] = self.curr_cash
-                    trade['type'] = 'buy'
-                elif(row['sell']):
-                    self.curr_shares -= number
-                    self.curr_cash += number * (ohlcv.loc[self.get_closest_stamp(self.ohlcv.index, index, delta)]['open'])
-                    trade['owned_shares'] = self.curr_shares
-                    trade['remaining_cash'] = self.curr_cash
-                    trade['type'] = 'sell'
-                trades.append(trade)
+        for timestamp, row in ohlcv[(ohlcv['buy'] == True) | (ohlcv['sell'] == True)].iterrows():
+            next_timestamp = get_closest_stamp(ohlcv.index, timestamp, self.freq)
+            trade_price = ohlcv.loc[next_timestamp]['open']
+            trade = {}
+            trade['timestamp'] = timestamp
+            trade['share_price'] =  trade_price
+
+            if(row['buy']):
+                number = self.evaluate_buy(buy_type, trade_price, buy_param)
+                self.curr_shares += number
+                self.curr_cash -= number * trade_price
+                trade['owned_shares'] = self.curr_shares
+                trade['remaining_cash'] = self.curr_cash
+                trade['type'] = 'buy'
+            
+            elif(row['sell']):
+                number = self.evaluate_sell(sell_type, trade_price, sell_param)
+                self.curr_shares -= number
+                self.curr_cash += number * trade_price
+                trade['owned_shares'] = self.curr_shares
+                trade['remaining_cash'] = self.curr_cash
+                trade['type'] = 'sell'
+            trades.append(trade)
         trades_df = pd.DataFrame(trades).set_index('timestamp') # Convert to pandas DataFrame
         return self._summarize(trades_df)
 
@@ -106,6 +118,26 @@ class Backtest(object):
         if self._summary:
             return self._summary
         raise KeyError('Run the Algorithm first!')
+
+    def evaluate_buy(self, type, buying_price, param):
+        if type == 'percent_cash':
+            return (param*self.curr_cash) // (buying_price*100)
+        elif type == 'absolute':
+            return param
+        elif type == 'percent_shares':
+            return (param*self.curr_shares) // 100
+
+    def evaluate_sell(self,type, selling_price, param='None'):
+        if type == 'percent_shares':
+            return (param*self.curr_shares) // 100
+        elif type == 'absolute':
+            return param
+        elif type == 'percent_portfolio':
+            portfolio_value = self.curr_cash + self.curr_shares*selling_price
+            return (param*portfolio_value) // 100
+
+    # def establish_algo(buy=None, sell=None, short=None, cover=None):
+    #     pass
 
     def get_closest_stamp(self, index, timestamp, delta, type='start'):
         if type == 'start':
