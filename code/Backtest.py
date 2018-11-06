@@ -1,39 +1,36 @@
 """Custom Backtesting Library from Scratch"""
 
 import pandas as pd
-from pandas import to_datetime
 from signals import evaluate
-from utility import get_closest_stamp
+from utility import get_next_stamp
 
 
 class Backtest(object):
     """Main Backtesting Object"""
 
-    def __init__(self, ohlcv, ini_cash, start=None, end=None, ini_shares=0, algo=None, params=None):
+    def __init__(self, ohlcv, algo=None, ini_cash=10000, ini_shares=0, start=None, end=None, params=None, timedelta=None):
         """
         Backtest object constructor:
         params:
-            algo: Preferred algo (moving_average, rsi, etc)
+            algo: Preferred algo ("moving_average", "rsi", etc)
         """
+        if timedelta:
+            self.delta = pd.Timedelta(timedelta)
+        else:
+            self.delta = pd.Timedelta(days=1) # Default Time delta
 
-        self.freq = pd.Timedelta(days=1) # Default Time Delta
-
-        start = to_datetime(start)
-        end = to_datetime(end)
         if start:
-            self.start = get_closest_stamp(ohlcv.index, start, self.freq, 'start')
+            start = pd.to_datetime(start)
+            self.start = get_next_stamp(ohlcv.index, start, self.delta)
         else:
             self.start = ohlcv.index.min()
         if end:
-            self.end = get_closest_stamp(ohlcv.index, end, self.freq, 'end')
+            end = pd.to_datetime(end)
+            self.end = get_next_stamp(ohlcv.index, end, self.delta)
         else:
             self.end = ohlcv.index.max()
 
-        # Initialising Data
-        if isinstance(ohlcv, pd.DataFrame):
-            self.ohlcv = ohlcv.loc[self.start:self.end].copy()
-        elif isinstance(ohlcv, str) and ohlcv=='default':
-            pass # Set self.ohlcv to Default Data Bundle (To be decided later)
+        self.ohlcv = ohlcv.loc[self.start:self.end].copy()
 
         # Immutable Trading variable
         self.ini_cash = ini_cash
@@ -46,40 +43,42 @@ class Backtest(object):
         # Algo goes here
         if algo:
             if params:
-                self.buy, self.sell = evaluate(self.ohlcv, algo, params)
+                (self.buy, self.sell) = evaluate(self.ohlcv, algo, params)
             else:
-                self.buy, self.sell = evaluate(self.ohlcv, algo)
-            self.algo_ready = True
+                (self.buy, self.sell) = evaluate(self.ohlcv, algo)
+            self._ready = True
+        else:
+            self._ready = False
 
     def run_backtest(self, buy_type, buy_param, sell_type, sell_param):
         """ Run backtest here """
+        if not self._ready:
+            raise Exception("Signals for trading not ready yet. Set manually or specify algo when initialising.")
+        
         self.reset()
         ohlcv = self.ohlcv
 
-        if self.algo_ready == True:
-            ohlcv['buy'] = self.buy
-            ohlcv['sell'] = self.sell
-        else:
-            raise KeyError('Establish your algo first: Either at Object creation time or using establish_algo()')
+        ohlcv['buy'] = self.buy
+        ohlcv['sell'] = self.sell
         
         trades = []
         for timestamp, row in ohlcv[(ohlcv['buy'] == True) | (ohlcv['sell'] == True)].iterrows():
-            next_timestamp = get_closest_stamp(ohlcv.index, timestamp, self.freq)
-            trade_price = ohlcv.loc[next_timestamp]['open']
             trade = {}
-            trade['timestamp'] = timestamp
+            next_timestamp = get_next_stamp(ohlcv.index, timestamp, self.delta)
+            trade_price = ohlcv.loc[next_timestamp]['open']
+            trade['timestamp'] = next_timestamp
             trade['share_price'] =  trade_price
 
-            if(row['buy']):
-                number = self.evaluate_buy(buy_type, trade_price, buy_param)
+            if row['buy']:
+                number = self.evaluate_buy(buy_type, buy_param, trade_price)
                 self.curr_shares += number
                 self.curr_cash -= number * trade_price
                 trade['owned_shares'] = self.curr_shares
                 trade['remaining_cash'] = self.curr_cash
                 trade['type'] = 'buy'
             
-            elif(row['sell']):
-                number = self.evaluate_sell(sell_type, trade_price, sell_param)
+            else:
+                number = self.evaluate_sell(sell_type, sell_param, trade_price)
                 self.curr_shares -= number
                 self.curr_cash += number * trade_price
                 trade['owned_shares'] = self.curr_shares
@@ -119,37 +118,26 @@ class Backtest(object):
             return self._summary
         raise KeyError('Run the Algorithm first!')
 
-    def evaluate_buy(self, type, buying_price, param):
-        if type == 'percent_cash':
-            return (param*self.curr_cash) // (buying_price*100)
-        elif type == 'absolute':
+    def evaluate_buy(self, type, param, buy_price):
+        if type == "percent_cash":
+            return (param*self.curr_cash) // (buy_price*100)
+        elif type == "absolute":
             return param
-        elif type == 'percent_shares':
+        elif type == "percent_shares":
             return (param*self.curr_shares) // 100
+        elif type == "full_stakes":
+            return self.curr_cash // buy_price
 
-    def evaluate_sell(self,type, selling_price, param='None'):
+    def evaluate_sell(self, type, param, sell_price):
         if type == 'percent_shares':
             return (param*self.curr_shares) // 100
         elif type == 'absolute':
             return param
         elif type == 'percent_portfolio':
-            portfolio_value = self.curr_cash + self.curr_shares*selling_price
+            portfolio_value = self.curr_cash + self.curr_shares*sell_price
             return (param*portfolio_value) // 100
-
-    # def establish_algo(buy=None, sell=None, short=None, cover=None):
-    #     pass
-
-    def get_closest_stamp(self, index, timestamp, delta, type='start'):
-        if type == 'start':
-            closest = timestamp
-            while closest not in index:
-                closest += delta
-            return closest
-        elif type == 'end':
-            closest = timestamp
-            while closest not in index:
-                closest -= delta
-            return closest
+        elif type == "full_stakes":
+            return self.curr_shares
 
     def reset(self):
         self.curr_cash = self.ini_cash
