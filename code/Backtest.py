@@ -71,6 +71,8 @@ class Backtest(object):
 
             if row['buy']:
                 number = self.evaluate_buy(buy_type, buy_param, trade_price)
+                if (self.curr_cash < (number * trade_price)):
+                    continue
                 self.curr_shares += number
                 self.curr_cash -= number * trade_price
                 trade['owned_shares'] = self.curr_shares
@@ -79,13 +81,17 @@ class Backtest(object):
             
             else:
                 number = self.evaluate_sell(sell_type, sell_param, trade_price)
+                if (self.curr_shares < number):
+                    continue
                 self.curr_shares -= number
                 self.curr_cash += number * trade_price
                 trade['owned_shares'] = self.curr_shares
                 trade['remaining_cash'] = self.curr_cash
                 trade['type'] = 'sell'
+
             trades.append(trade)
         trades_df = pd.DataFrame(trades).set_index('timestamp') # Convert to pandas DataFrame
+        self.trades_df = trades_df
         return self._summarize(trades_df)
 
     def _summarize(self, trades):

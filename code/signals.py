@@ -1,17 +1,39 @@
 """Different Algos returning Buy, Sell, Short, Cover Signals in response to OHLCV Data"""
 
+from pykalman import KalmanFilter
+import pandas as pd
+
 def moving_average(ohlcv, params = None):
 
     if params:
         swindow = params["swindow"]
         lwindow = params["lwindow"]
     else:
-        swindow = 20
-        lwindow = 50
+        swindow = 30
+        lwindow = 60
 
     sma = ohlcv.close.rolling(swindow).mean()
     lma = ohlcv.close.rolling(lwindow).mean()
 
+    buy = sma > lma
+    sell = sma < lma
+    return (buy, sell)
+
+def kalman(ohlcv):
+    kf = KalmanFilter(
+                        transition_matrices = [1],
+                        observation_matrices = [1],
+                        initial_state_mean = 0,
+                        initial_state_covariance = 1,
+                        observation_covariance=1,
+                        transition_covariance=.01
+                     )
+    x = ohlcv["close"]
+    state_means, _ = kf.filter(x.values)
+    state_means = pd.Series(state_means.flatten(), index=x.index)
+
+    sma = state_means.rolling(window = 30).mean()
+    lma = state_means.rolling(window = 60).mean()
     buy = sma > lma
     sell = sma < lma
     return (buy, sell)
@@ -50,3 +72,6 @@ def evaluate(ohlcv, algo, params=None):
         if params:
             return rsi(ohlcv, params)
         return rsi(ohlcv)
+    
+    elif algo == 'kalman':
+        return kalman(ohlcv)
