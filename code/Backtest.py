@@ -89,6 +89,7 @@ class Backtest(object):
                 trade['remaining_cash'] = self.curr_cash
                 trade['type'] = 'sell'
 
+            trade['portfolio_value'] = self.curr_cash + (self.curr_shares * trade_price)
             trades.append(trade)
         trades_df = pd.DataFrame(trades).set_index('timestamp') # Convert to pandas DataFrame
         self.trades_df = trades_df
